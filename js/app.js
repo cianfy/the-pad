@@ -97,8 +97,40 @@ class App {
     });
 
     // Image Upload Handling
-    this.imageDropZone.addEventListener('click', () => this.imageFileInput.click());
-    this.imageFileInput.addEventListener('change', (e) => this.handleImageSelect(e));
+    this.imageDropZone.addEventListener('click', (e) => {
+      e.preventDefault();
+      this.imageFileInput.click();
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      this.imageDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.imageDropZone.style.borderColor = 'var(--accent-primary)';
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      this.imageDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.imageDropZone.style.borderColor = '';
+      }, false);
+    });
+
+    this.imageDropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer && e.dataTransfer.files;
+      if (files && files.length > 0) {
+        this.handleImageFile(files[0]);
+      }
+    });
+
+    this.imageFileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        this.handleImageFile(e.target.files[0]);
+      }
+    });
+
     this.imageUrlInput.addEventListener('input', (e) => {
       if (e.target.value) {
         this.currentImageData = e.target.value;
@@ -152,9 +184,11 @@ class App {
   }
 
   /* --- Image Handling --- */
-  handleImageSelect(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+  handleImageFile(file) {
+    if (!file || !file.type.startsWith('image/')) {
+      this.showToast('⚠️ Seleziona un file di tipo immagine valido');
+      return;
+    }
 
     if (file.size > 4 * 1024 * 1024) {
       this.showToast('⚠️ Immagine troppo grande (max 4MB)');
