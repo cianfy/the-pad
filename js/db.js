@@ -1,11 +1,14 @@
 /* ==========================================================================
    THE PAD - Database Layer (db.js)
-   Handles LocalStorage, Tab Synchronization & Supabase Cloud Realtime Sync
+   Embedded Supabase Realtime Database Connection
    ========================================================================== */
 
 const STORAGE_KEY = 'the_pad_posts_v1';
-const DB_CONFIG_KEY = 'the_pad_supabase_config_v1';
 const CHANNEL_NAME = 'the_pad_sync_channel';
+
+// Hardcoded Supabase Credentials (Pre-configured)
+const SUPABASE_URL = 'https://zeeoombtaehsavzejaue.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_3vietzxqEFQxRj90McPFQA_V8FcoPnf';
 
 // Initial Demo Posts if storage is empty
 const INITIAL_DEMO_POSTS = [
@@ -29,10 +32,10 @@ const INITIAL_DEMO_POSTS = [
   {
     id: 'demo-2',
     title: '⚡ Connesso a Supabase',
-    content: 'Questa app è pronta per Supabase! Collega le tue chiavi Supabase nelle impostazioni (⚡) per condividere i post con tutti gli utenti sul web.',
+    content: 'I post pubblicati qui vengono salvati direttamente nel tuo database Supabase cloud e visibili a tutti in tempo reale!',
     author: 'Fabio',
     color: 'teal',
-    tag: 'Guide',
+    tag: 'Cloud',
     image: null,
     reactions: { '🚀': 8, '👍': 4 },
     comments: [],
@@ -77,32 +80,26 @@ class DatabaseService {
     }
   }
 
-  // Check if Supabase is configured
+  // Auto-initialize embedded Supabase
   _initSupabase() {
-    if (typeof localStorage === 'undefined') return;
-    const configRaw = localStorage.getItem(DB_CONFIG_KEY);
-    
-    if (configRaw && window.supabase) {
+    if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
       try {
-        const config = JSON.parse(configRaw);
-        if (config.url && config.key) {
-          this.supabaseClient = window.supabase.createClient(config.url, config.key);
-          this.isCloudActive = true;
-          console.log('⚡ Connesso a Supabase Realtime Database');
-          
-          // Initial Fetch from Supabase
-          this.fetchFromSupabase();
+        this.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        this.isCloudActive = true;
+        console.log('⚡ Connesso nativamente a Supabase Database');
+        
+        // Fetch posts from Cloud
+        this.fetchFromSupabase();
 
-          // Real-time Supabase Subscription
-          this.supabaseClient
-            .channel('public:posts')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
-              this.fetchFromSupabase();
-            })
-            .subscribe();
-        }
+        // Real-time Supabase Subscription
+        this.supabaseClient
+          .channel('public:posts')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
+            this.fetchFromSupabase();
+          })
+          .subscribe();
       } catch (e) {
-        console.error('Errore inizializzazione Supabase config:', e);
+        console.error('Errore inizializzazione Supabase:', e);
       }
     }
   }
@@ -120,7 +117,7 @@ class DatabaseService {
         return;
       }
 
-      if (data) {
+      if (data && data.length > 0) {
         this._saveLocal(data);
         this._notifyListeners();
       }
@@ -284,18 +281,6 @@ class DatabaseService {
         console.error('Errore posizione Supabase:', err);
       }
     }
-  }
-
-  // Save Supabase Config
-  saveSupabaseConfig(config) {
-    localStorage.setItem(DB_CONFIG_KEY, JSON.stringify(config));
-    location.reload();
-  }
-
-  // Disconnect Cloud
-  disconnectCloud() {
-    localStorage.removeItem(DB_CONFIG_KEY);
-    location.reload();
   }
 
   _broadcastUpdate() {

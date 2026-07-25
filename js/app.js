@@ -33,7 +33,6 @@ class App {
     this.viewListBtn = document.getElementById('viewListBtn');
     this.themeToggleBtn = document.getElementById('themeToggleBtn');
     this.themeIcon = document.getElementById('themeIcon');
-    this.dbConfigBtn = document.getElementById('dbConfigBtn');
     this.openPostModalBtn = document.getElementById('openPostModalBtn');
     this.fabBtn = document.getElementById('fabBtn');
     
@@ -58,13 +57,6 @@ class App {
     this.imagePreview = document.getElementById('imagePreview');
     this.removeImageBtn = document.getElementById('removeImageBtn');
 
-    // Supabase DB Modal
-    this.dbModal = document.getElementById('dbModal');
-    this.closeDbModalBtn = document.getElementById('closeDbModalBtn');
-    this.cancelDbModalBtn = document.getElementById('cancelDbModalBtn');
-    this.dbConfigForm = document.getElementById('dbConfigForm');
-    this.resetDbConfigBtn = document.getElementById('resetDbConfigBtn');
-
     // Lightbox
     this.lightboxModal = document.getElementById('lightboxModal');
     this.lightboxImage = document.getElementById('lightboxImage');
@@ -88,11 +80,6 @@ class App {
     this.fabBtn.addEventListener('click', () => this.openPostModal());
     this.closePostModalBtn.addEventListener('click', () => this.closePostModal());
     this.cancelPostModalBtn.addEventListener('click', () => this.closePostModal());
-
-    this.dbConfigBtn.addEventListener('click', () => this.openDbModal());
-    this.dbStatusBadge.addEventListener('click', () => this.openDbModal());
-    this.closeDbModalBtn.addEventListener('click', () => this.closeDbModal());
-    this.cancelDbModalBtn.addEventListener('click', () => this.closeDbModal());
 
     this.closeLightboxBtn.addEventListener('click', () => this.closeLightbox());
     this.lightboxModal.addEventListener('click', (e) => {
@@ -123,8 +110,6 @@ class App {
 
     // Form Submissions
     this.postForm.addEventListener('submit', (e) => this.handlePostSubmit(e));
-    this.dbConfigForm.addEventListener('submit', (e) => this.handleDbConfigSubmit(e));
-    this.resetDbConfigBtn.addEventListener('click', () => db.disconnectCloud());
   }
 
   /* --- Theme Toggle --- */
@@ -205,22 +190,6 @@ class App {
     this.clearImagePreview();
   }
 
-  openDbModal() {
-    const configRaw = localStorage.getItem('the_pad_supabase_config_v1');
-    if (configRaw) {
-      try {
-        const config = JSON.parse(configRaw);
-        document.getElementById('supabaseUrl').value = config.url || '';
-        document.getElementById('supabaseKey').value = config.key || '';
-      } catch(e){}
-    }
-    this.dbModal.classList.add('active');
-  }
-
-  closeDbModal() {
-    this.dbModal.classList.remove('active');
-  }
-
   openLightbox(imageSrc) {
     this.lightboxImage.src = imageSrc;
     this.lightboxModal.classList.add('active');
@@ -258,23 +227,10 @@ class App {
     this.showToast('🎉 Post pubblicato con successo!');
   }
 
-  handleDbConfigSubmit(e) {
-    e.preventDefault();
-    const url = document.getElementById('supabaseUrl').value.trim();
-    const key = document.getElementById('supabaseKey').value.trim();
-
-    if (!url || !key) {
-      this.showToast('⚠️ Inserisci sia la Project URL che la Anon Key');
-      return;
-    }
-
-    db.saveSupabaseConfig({ url, key });
-  }
-
   updateDbStatus() {
     if (db.isCloudActive) {
       this.dbStatusBadge.className = 'db-status-badge';
-      this.dbStatusText.textContent = '⚡ Database Cloud Supabase Connesso';
+      this.dbStatusText.textContent = '⚡ Live Cloud Sync (Supabase)';
     } else {
       this.dbStatusBadge.className = 'db-status-badge local';
       this.dbStatusText.textContent = '💾 Database Locale (LocalStorage)';
