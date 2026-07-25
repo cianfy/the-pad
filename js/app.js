@@ -9,6 +9,8 @@ import { makeCardDraggable } from './drag.js';
 class App {
   constructor() {
     this.currentPosts = [];
+    this.connectionState = 'connecting';
+    this.connectionError = null;
     this.currentView = localStorage.getItem('the_pad_view_mode') || 'grid';
     this.selectedColor = 'purple';
     this.currentImageData = null;
@@ -17,11 +19,13 @@ class App {
     this.initEventListeners();
     this.initTheme();
     this.initViewMode();
-    this.updateDbStatus();
 
-    // Subscribe to DB updates
-    db.subscribe((posts) => {
+    // Subscribe to DB updates & connection states
+    db.subscribe((posts, state, error) => {
       this.currentPosts = posts;
+      this.connectionState = state;
+      this.connectionError = error;
+      this.updateDbStatus();
       this.render();
     });
   }
@@ -214,6 +218,10 @@ class App {
 
   /* --- Modals & Forms --- */
   openPostModal() {
+    if (this.connectionState === 'error') {
+      this.showToast('⚠️ Impossibile creare post: Supabase non disponibile');
+      return;
+    }
     this.postModal.classList.add('active');
     document.getElementById('postContentInput').focus();
   }
@@ -256,18 +264,25 @@ class App {
       image: this.currentImageData
     };
 
-    await db.addPost(postData);
-    this.closePostModal();
-    this.showToast('🎉 Post pubblicato con successo!');
+    try {
+      await db.addPost(postData);
+      this.closePostModal();
+      this.showToast('🎉 Post pubblicato su Supabase!');
+    } catch (err) {
+      this.showToast('⚠️ Errore di pubblicazione: ' + err.message);
+    }
   }
 
   updateDbStatus() {
-    if (db.isCloudActive) {
+    if (this.connectionState === 'connected') {
       this.dbStatusBadge.className = 'db-status-badge';
       this.dbStatusText.textContent = '⚡ Live Cloud Sync (Supabase)';
+    } else if (this.connectionState === 'connecting') {
+      this.dbStatusBadge.className = 'db-status-badge local';
+      this.dbStatusText.textContent = '🔄 Connessione a Supabase...';
     } else {
       this.dbStatusBadge.className = 'db-status-badge local';
-      this.dbStatusText.textContent = '💾 Database Locale (LocalStorage)';
+      this.dbStatusText.textContent = '⚠️ Connessione Assente';
     }
   }
 
@@ -287,9 +302,35 @@ class App {
 
   /* --- Render Posts & Cards --- */
   render() {
+    this.boardContainer.innerHTML = '';
+
+    // Handle Connection Error State
+    if (this.connectionState === 'error') {
+      this.boardContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">⚠️</div>
+          <h3>Connessione a Supabase non disponibile</h3>
+          <p>Impossibile stabilire il collegamento con il database cloud.<br>Il Pad non è momentaneamente disponibile.</p>
+        </div>
+      `;
+      return;
+    }
+
+    // Handle Connecting State
+    if (this.connectionState === 'connecting' && this.currentPosts.length === 0) {
+      this.boardContainer.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🔄</div>
+          <h3>Connessione al Pad in corso...</h3>
+          <p>Attendi un istante il caricamento dei post dal database cloud.</p>
+        </div>
+      `;
+      return;
+    }
+
     const query = this.searchInput.value.toLowerCase().trim();
-    
     let filteredPosts = this.currentPosts;
+    
     if (query) {
       filteredPosts = this.currentPosts.filter(p => 
         (p.title && p.title.toLowerCase().includes(query)) ||
@@ -299,13 +340,11 @@ class App {
       );
     }
 
-    this.boardContainer.innerHTML = '';
-
     if (filteredPosts.length === 0) {
       this.boardContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📌</div>
-          <h3>Nessun post trovato</h3>
+          <h3>Nessun post presente nella bacheca</h3>
           <p>${query ? 'Nessun risultato corrisponde alla tua ricerca.' : 'Sii il primo a pubblicare una nota o un\'immagine!'}</p>
         </div>
       `;

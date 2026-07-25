@@ -6,63 +6,15 @@
 const STORAGE_KEY = 'the_pad_posts_v1';
 const CHANNEL_NAME = 'the_pad_sync_channel';
 
-// Hardcoded Supabase Credentials (Pre-configured)
+// Hardcoded Supabase Credentials
 const SUPABASE_URL = 'https://zeeoombtaehsavzejaue.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3vietzxqEFQxRj90McPFQA_V8FcoPnf';
-
-// Initial Demo Posts if storage is empty
-const INITIAL_DEMO_POSTS = [
-  {
-    id: 'demo-1',
-    title: '👋 Benvenuto su The Pad!',
-    content: 'Questo è un post di esempio sulla tua bacheca interattiva! Puoi aggiungere note con testo, immagini, colori personalizzati e tag.',
-    author: 'Admin',
-    color: 'purple',
-    tag: 'Benvenuto',
-    image: 'https://images.unsplash.com/photo-1517842645767-c639042777db?auto=format&fit=crop&w=800&q=80',
-    reactions: { '❤️': 5, '🔥': 3, '💡': 2 },
-    comments: [
-      { author: 'Marco', text: 'Spettacolare questa bacheca!' },
-      { author: 'Elena', text: 'Funziona benissimo anche da smartphone.' }
-    ],
-    x: 40,
-    y: 40,
-    created_at: Date.now() - 3600000 * 2
-  },
-  {
-    id: 'demo-2',
-    title: '⚡ Connesso a Supabase',
-    content: 'I post pubblicati qui vengono salvati direttamente nel tuo database Supabase cloud e visibili a tutti in tempo reale!',
-    author: 'Fabio',
-    color: 'teal',
-    tag: 'Cloud',
-    image: null,
-    reactions: { '🚀': 8, '👍': 4 },
-    comments: [],
-    x: 400,
-    y: 60,
-    created_at: Date.now() - 3600000
-  },
-  {
-    id: 'demo-3',
-    title: '🎨 Prova la Vista Libera!',
-    content: 'Clicca sull\'icona 🖐️ in alto per passare alla modalità Bacheca Libera e trascina queste schedine dove vuoi sul canvas!',
-    author: 'Design Team',
-    color: 'pink',
-    tag: 'Features',
-    image: 'https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&w=800&q=80',
-    reactions: { '🔥': 6 },
-    comments: [],
-    x: 760,
-    y: 120,
-    created_at: Date.now()
-  }
-];
 
 class DatabaseService {
   constructor() {
     this.listeners = [];
-    this.isCloudActive = false;
+    this.connectionState = 'connecting'; // 'connecting', 'connected', 'error'
+    this.connectionError = null;
     this.supabaseClient = null;
     this.broadcastChannel = null;
     
@@ -80,12 +32,11 @@ class DatabaseService {
     }
   }
 
-  // Auto-initialize embedded Supabase
+  // Initialize embedded Supabase
   _initSupabase() {
     if (window.supabase && SUPABASE_URL && SUPABASE_KEY) {
       try {
         this.supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        this.isCloudActive = true;
         console.log('⚡ Connesso nativamente a Supabase Database');
         
         // Fetch posts from Cloud
@@ -100,7 +51,14 @@ class DatabaseService {
           .subscribe();
       } catch (e) {
         console.error('Errore inizializzazione Supabase:', e);
+        this.connectionState = 'error';
+        this.connectionError = e.message || 'Errore di connessione';
+        this._notifyListeners();
       }
+    } else {
+      this.connectionState = 'error';
+      this.connectionError = 'Credenziali Supabase non configurate';
+      this._notifyListeners();
     }
   }
 
@@ -114,41 +72,46 @@ class DatabaseService {
 
       if (error) {
         console.warn('Errore lettura Supabase:', error.message);
+        this.connectionState = 'error';
+        this.connectionError = error.message;
+        this._notifyListeners();
         return;
       }
 
-      if (data && data.length > 0) {
+      this.connectionState = 'connected';
+      this.connectionError = null;
+      if (data) {
         this._saveLocal(data);
-        this._notifyListeners();
       }
+      this._notifyListeners();
     } catch (err) {
       console.error('Errore fetch Supabase:', err);
+      this.connectionState = 'error';
+      this.connectionError = err.message || 'Connessione a Supabase non disponibile';
+      this._notifyListeners();
     }
   }
 
   // Subscribe to Post Updates
   subscribe(callback) {
     this.listeners.push(callback);
-    callback(this.getPosts());
+    callback(this.getPosts(), this.connectionState, this.connectionError);
   }
 
   _notifyListeners() {
     const posts = this.getPosts();
-    this.listeners.forEach(cb => cb(posts));
+    this.listeners.forEach(cb => cb(posts, this.connectionState, this.connectionError));
   }
 
-  // Get all posts (local or cached)
+  // Get all posts from cache
   getPosts() {
-    if (typeof localStorage === 'undefined') return INITIAL_DEMO_POSTS;
+    if (typeof localStorage === 'undefined') return [];
     const data = localStorage.getItem(STORAGE_KEY);
-    if (!data) {
-      this._saveLocal(INITIAL_DEMO_POSTS);
-      return INITIAL_DEMO_POSTS;
-    }
+    if (!data) return [];
     try {
       return JSON.parse(data);
     } catch (e) {
-      return INITIAL_DEMO_POSTS;
+      return [];
     }
   }
 
@@ -160,6 +123,10 @@ class DatabaseService {
 
   // Add a new post
   async addPost(postData) {
+    if (this.connectionState !== 'connected' || !this.supabaseClient) {
+      throw new Error('Impossibile pubblicare: connessione a Supabase non disponibile');
+    }
+
     const newPost = {
       id: 'post-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
       title: postData.title || '',
@@ -175,43 +142,29 @@ class DatabaseService {
       created_at: Date.now()
     };
 
-    const posts = this.getPosts();
-    posts.unshift(newPost);
-    this._saveLocal(posts);
+    const { error } = await this.supabaseClient.from('posts').insert([newPost]);
+    if (error) throw new Error(error.message);
 
-    if (this.isCloudActive && this.supabaseClient) {
-      try {
-        const { error } = await this.supabaseClient.from('posts').insert([newPost]);
-        if (error) console.error('Errore inserimento Supabase:', error.message);
-      } catch (err) {
-        console.error('Errore salvataggio Supabase Cloud:', err);
-      }
-    }
-
+    await this.fetchFromSupabase();
     this._broadcastUpdate();
     return newPost;
   }
 
   // Delete a post
   async deletePost(id) {
-    let posts = this.getPosts();
-    posts = posts.filter(p => p.id !== id);
-    this._saveLocal(posts);
+    if (this.connectionState !== 'connected' || !this.supabaseClient) return;
 
-    if (this.isCloudActive && this.supabaseClient) {
-      try {
-        const { error } = await this.supabaseClient.from('posts').delete().eq('id', id);
-        if (error) console.error('Errore eliminazione Supabase:', error.message);
-      } catch (err) {
-        console.error('Errore eliminazione Supabase Cloud:', err);
-      }
-    }
+    const { error } = await this.supabaseClient.from('posts').delete().eq('id', id);
+    if (error) console.error('Errore eliminazione Supabase:', error.message);
 
+    await this.fetchFromSupabase();
     this._broadcastUpdate();
   }
 
   // Add/Toggle reaction
   async addReaction(postId, reactionEmoji) {
+    if (this.connectionState !== 'connected' || !this.supabaseClient) return;
+
     const posts = this.getPosts();
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -219,24 +172,18 @@ class DatabaseService {
     if (!post.reactions) post.reactions = {};
     post.reactions[reactionEmoji] = (post.reactions[reactionEmoji] || 0) + 1;
 
-    this._saveLocal(posts);
-
-    if (this.isCloudActive && this.supabaseClient) {
-      try {
-        await this.supabaseClient
-          .from('posts')
-          .update({ reactions: post.reactions })
-          .eq('id', postId);
-      } catch (err) {
-        console.error('Errore reazione Supabase:', err);
-      }
-    }
+    await this.supabaseClient
+      .from('posts')
+      .update({ reactions: post.reactions })
+      .eq('id', postId);
 
     this._broadcastUpdate();
   }
 
   // Add a comment to a post
   async addComment(postId, commentObj) {
+    if (this.connectionState !== 'connected' || !this.supabaseClient) return;
+
     const posts = this.getPosts();
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -244,24 +191,18 @@ class DatabaseService {
     if (!post.comments) post.comments = [];
     post.comments.push(commentObj);
 
-    this._saveLocal(posts);
-
-    if (this.isCloudActive && this.supabaseClient) {
-      try {
-        await this.supabaseClient
-          .from('posts')
-          .update({ comments: post.comments })
-          .eq('id', postId);
-      } catch (err) {
-        console.error('Errore commento Supabase:', err);
-      }
-    }
+    await this.supabaseClient
+      .from('posts')
+      .update({ comments: post.comments })
+      .eq('id', postId);
 
     this._broadcastUpdate();
   }
 
   // Update canvas coordinates (x, y)
   async updatePostPosition(postId, x, y) {
+    if (this.connectionState !== 'connected' || !this.supabaseClient) return;
+
     const posts = this.getPosts();
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -269,25 +210,16 @@ class DatabaseService {
     post.x = x;
     post.y = y;
 
-    this._saveLocal(posts);
-
-    if (this.isCloudActive && this.supabaseClient) {
-      try {
-        await this.supabaseClient
-          .from('posts')
-          .update({ x, y })
-          .eq('id', postId);
-      } catch (err) {
-        console.error('Errore posizione Supabase:', err);
-      }
-    }
+    await this.supabaseClient
+      .from('posts')
+      .update({ x, y })
+      .eq('id', postId);
   }
 
   _broadcastUpdate() {
     if (this.broadcastChannel) {
       this.broadcastChannel.postMessage('posts_updated');
     }
-    this._notifyListeners();
   }
 }
 
