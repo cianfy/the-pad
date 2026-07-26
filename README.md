@@ -15,6 +15,10 @@ Ora ciascun utente può:
 Per attivare le bacheche personali e le autorizzazioni di sicurezza RLS, apri l'**SQL Editor** su Supabase ed esegui questo codice SQL:
 
 ```sql
+-- 0. Rimuovi le tabelle vecchie per aggiornare la struttura
+drop table if exists posts cascade;
+drop table if exists boards cascade;
+
 -- 1. Tabella delle Bacheche Personali
 create table boards (
   id text primary key,
@@ -24,7 +28,7 @@ create table boards (
   created_at bigint
 );
 
--- 2. Aggiornamento Tabella dei Post
+-- 2. Tabella dei Post legati alle bacheche ed agli utenti
 create table posts (
   id text primary key,
   board_id text references boards(id) on delete cascade,
