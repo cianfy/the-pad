@@ -30,7 +30,7 @@
           <div class="logo-badge">📌</div>
           <div>
             <div class="logo-title">The Pad</div>
-            <div class="logo-subtitle">Personal Boards</div>
+            <div class="logo-subtitle">Interactive Boards</div>
           </div>
         </div>
 
@@ -43,13 +43,16 @@
         <!-- Header Actions & Auth Bar -->
         <div class="header-actions">
           
-          <!-- Board Switcher (Visible when logged in) -->
-          <div id="boardSelectorContainer" class="board-selector-container" style="display: none;">
-            <select id="boardSelect" class="form-select board-select-dropdown" title="Seleziona la tua bacheca">
-              <!-- Dynamically populated boards -->
+          <!-- Board Switcher & Controls -->
+          <div id="boardSelectorContainer" class="board-selector-container">
+            <select id="boardSelect" class="form-select board-select-dropdown" title="Seleziona bacheca">
+              <option value="public-community-board">🌐 Bacheca della Community</option>
             </select>
-            <button id="openNewBoardModalBtn" class="btn-icon" title="Crea Nuova Bacheca">
+            <button id="openNewBoardModalBtn" class="btn-icon" title="Crea Nuova Bacheca" style="display: none;">
               <span>➕</span> <span class="hide-mobile">Nuova Bacheca</span>
+            </button>
+            <button id="deleteBoardBtn" class="btn-icon" title="Elimina questa bacheca" style="display: none; color: #ef4444;">
+              <span>🗑️</span>
             </button>
           </div>
 
@@ -86,8 +89,8 @@
             </button>
           </div>
 
-          <!-- Add Post Button -->
-          <button id="openPostModalBtn" class="btn-primary" style="display: none;">
+          <!-- Add Post Button (Always visible for Public or Personal board) -->
+          <button id="openPostModalBtn" class="btn-primary">
             <span>✨</span> <span>Nuovo Post</span>
           </button>
         </div>
@@ -98,12 +101,12 @@
     <!-- Board Info Banner -->
     <div class="board-header">
       <div class="board-info">
-        <h1 id="boardTitle">Le mie Bacheche</h1>
-        <p id="boardDescription">Accedi per creare e gestire le tue bacheche personali.</p>
+        <h1 id="boardTitle">🌐 Bacheca della Community</h1>
+        <p id="boardDescription">Bacheca condivisa pubblica. Ognuno può pubblicare quello che vuole!</p>
       </div>
       <div id="dbStatusBadge" class="db-status-badge">
         <span class="status-dot"></span>
-        <span id="dbStatusText">⚡ Supabase Auth & Cloud</span>
+        <span id="dbStatusText">⚡ Supabase Cloud Realtime</span>
       </div>
     </div>
 
@@ -115,7 +118,7 @@
     </main>
 
     <!-- Floating Action Button for Mobile/Desktop -->
-    <button id="fabBtn" class="fab" title="Crea un nuovo post" style="display: none;">
+    <button id="fabBtn" class="fab" title="Crea un nuovo post">
       ➕
     </button>
   </div>

@@ -3,15 +3,15 @@
    Renders Posts, Controls View Layouts, Modals, Search & User Interactions
    ========================================================================== */
 
-import { db } from './db.js';
+import { db, PUBLIC_BOARD_ID, PUBLIC_BOARD } from './db.js';
 import { authManager } from './auth.js';
 import { makeCardDraggable } from './drag.js';
 
 class App {
   constructor() {
     this.currentPosts = [];
-    this.boards = [];
-    this.activeBoard = null;
+    this.boards = [PUBLIC_BOARD];
+    this.activeBoard = PUBLIC_BOARD;
     this.connectionState = 'connecting';
     this.connectionError = null;
     this.currentView = localStorage.getItem('the_pad_view_mode') || 'grid';
@@ -37,9 +37,9 @@ class App {
       if (user) {
         await this.loadUserBoards();
       } else {
-        this.boards = [];
-        this.activeBoard = null;
-        this.renderLoggedOutState();
+        this.boards = [PUBLIC_BOARD];
+        this.selectBoard(PUBLIC_BOARD_ID);
+        this.updateBoardDropdown();
       }
     });
   }
@@ -57,6 +57,7 @@ class App {
     // Board Selector Elements
     this.boardSelect = document.getElementById('boardSelect');
     this.openNewBoardModalBtn = document.getElementById('openNewBoardModalBtn');
+    this.deleteBoardBtn = document.getElementById('deleteBoardBtn');
     this.boardTitle = document.getElementById('boardTitle');
     this.boardDescription = document.getElementById('boardDescription');
 
@@ -108,6 +109,7 @@ class App {
     // Board Switcher Dropdown & Modal
     this.boardSelect.addEventListener('change', (e) => this.selectBoard(e.target.value));
     this.openNewBoardModalBtn.addEventListener('click', () => this.openBoardModal());
+    this.deleteBoardBtn.addEventListener('click', () => this.handleDeleteBoard());
     this.closeBoardModalBtn.addEventListener('click', () => this.closeBoardModal());
     this.cancelBoardModalBtn.addEventListener('click', () => this.closeBoardModal());
     this.boardForm.addEventListener('submit', (e) => this.handleBoardSubmit(e));
@@ -185,20 +187,11 @@ class App {
   async loadUserBoards() {
     this.boards = await db.getBoards();
     this.updateBoardDropdown();
+    this.openNewBoardModalBtn.style.display = 'flex';
 
-    if (this.boards.length > 0) {
-      this.selectBoard(this.boards[0].id);
-    } else {
-      // Auto-create a default board if user has none
-      try {
-        const defaultBoard = await db.createBoard('La mia prima Bacheca', 'Note e appunti personali');
-        this.boards = [defaultBoard];
-        this.updateBoardDropdown();
-        this.selectBoard(defaultBoard.id);
-      } catch (err) {
-        console.error('Errore creazione bacheca default:', err);
-      }
-    }
+    // Keep current board if valid, otherwise fallback to public
+    const currentId = this.activeBoard ? this.activeBoard.id : PUBLIC_BOARD_ID;
+    this.selectBoard(currentId);
   }
 
   updateBoardDropdown() {
@@ -206,19 +199,29 @@ class App {
     this.boards.forEach(b => {
       const opt = document.createElement('option');
       opt.value = b.id;
-      opt.textContent = '📌 ' + b.title;
+      opt.textContent = (b.id === PUBLIC_BOARD_ID ? '' : '📌 ') + b.title;
       this.boardSelect.appendChild(opt);
     });
   }
 
   selectBoard(boardId) {
-    const board = this.boards.find(b => b.id === boardId);
-    if (!board) return;
+    let board = this.boards.find(b => b.id === boardId);
+    if (!board) {
+      board = PUBLIC_BOARD;
+      boardId = PUBLIC_BOARD_ID;
+    }
 
     this.activeBoard = board;
     this.boardSelect.value = boardId;
     this.boardTitle.textContent = board.title;
-    this.boardDescription.textContent = board.description || 'Bacheca personale riservata';
+    this.boardDescription.textContent = board.description || 'Bacheca condivisa';
+
+    // Show delete button only if it's a personal board belonging to user
+    if (db.currentUser && board.id !== PUBLIC_BOARD_ID && board.user_id === db.currentUser.id) {
+      this.deleteBoardBtn.style.display = 'flex';
+    } else {
+      this.deleteBoardBtn.style.display = 'none';
+    }
 
     db.fetchFromSupabase(boardId);
   }
@@ -252,19 +255,20 @@ class App {
     }
   }
 
-  renderLoggedOutState() {
-    this.boardTitle.textContent = 'Le mie Bacheche';
-    this.boardDescription.textContent = 'Accedi o registrati per creare e gestire le tue bacheche personali.';
-    this.boardContainer.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🔐</div>
-        <h3>Accedi al tuo Account</h3>
-        <p>Effettua l'accesso o registrati per iniziare a creare e condividere note sulle tue bacheche personali.</p>
-        <div style="margin-top: 1.5rem;">
-          <button class="btn-primary" onclick="document.getElementById('openSignupModalBtn').click()" style="margin: 0 auto;">Crea un Account Gratuito 🚀</button>
-        </div>
-      </div>
-    `;
+  async handleDeleteBoard() {
+    if (!this.activeBoard || this.activeBoard.id === PUBLIC_BOARD_ID) return;
+
+    const confirmMsg = `Sei sicuro di voler eliminare la tua bacheca "${this.activeBoard.title}"? Scomparirà dalle tue bacheche.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      await db.deleteBoard(this.activeBoard.id);
+      this.showToast('🗑️ Bacheca eliminata con successo');
+      await this.loadUserBoards();
+      this.selectBoard(PUBLIC_BOARD_ID);
+    } catch (err) {
+      this.showToast('⚠️ Errore eliminazione: ' + err.message);
+    }
   }
 
   /* --- Theme Toggle --- */
@@ -337,11 +341,17 @@ class App {
 
   /* --- Modals & Forms --- */
   openPostModal() {
-    if (!db.currentUser) {
-      authManager.openModal('login');
-      return;
-    }
     this.postModal.classList.add('active');
+    
+    // Auto-fill logged in user's username
+    const authorInput = document.getElementById('postAuthorInput');
+    if (db.currentUser) {
+      const defaultUsername = (db.currentUser.user_metadata && db.currentUser.user_metadata.username) || db.currentUser.email.split('@')[0];
+      authorInput.value = defaultUsername;
+    } else {
+      authorInput.value = 'Anonimo';
+    }
+
     document.getElementById('postContentInput').focus();
   }
 
@@ -421,11 +431,6 @@ class App {
 
   /* --- Render Posts & Cards --- */
   render() {
-    if (!db.currentUser) {
-      this.renderLoggedOutState();
-      return;
-    }
-
     this.boardContainer.innerHTML = '';
 
     // Handle Connection Error State
@@ -446,7 +451,7 @@ class App {
         <div class="empty-state">
           <div class="empty-state-icon">🔄</div>
           <h3>Caricamento della bacheca...</h3>
-          <p>Attendi un istante il recupero delle tue note dal database cloud.</p>
+          <p>Attendi un istante il recupero delle note dal database cloud.</p>
         </div>
       `;
       return;
@@ -468,7 +473,7 @@ class App {
       this.boardContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📌</div>
-          <h3>Nessun post in questa bacheca</h3>
+          <h3>Nessun post presente in questa bacheca</h3>
           <p>${query ? 'Nessun risultato corrisponde alla tua ricerca.' : 'Sii il primo a pubblicare una nota o un\'immagine!'}</p>
         </div>
       `;
@@ -595,7 +600,10 @@ class App {
     const submitComment = () => {
       const text = commentInput.value.trim();
       if (!text) return;
-      db.addComment(post.id, { author: 'Tu', text });
+      const defaultUser = db.currentUser ? 
+        ((db.currentUser.user_metadata && db.currentUser.user_metadata.username) || db.currentUser.email.split('@')[0])
+        : 'Anonimo';
+      db.addComment(post.id, { author: defaultUser, text });
       commentInput.value = '';
     };
 

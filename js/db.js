@@ -10,6 +10,13 @@ const CHANNEL_NAME = 'the_pad_sync_channel';
 const SUPABASE_URL = 'https://zeeoombtaehsavzejaue.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_3vietzxqEFQxRj90McPFQA_V8FcoPnf';
 
+export const PUBLIC_BOARD_ID = 'public-community-board';
+export const PUBLIC_BOARD = {
+  id: PUBLIC_BOARD_ID,
+  title: '🌐 Bacheca della Community',
+  description: 'Bacheca condivisa pubblica. Ognuno può pubblicare quello che vuole!'
+};
+
 class DatabaseService {
   constructor() {
     this.listeners = [];
@@ -17,7 +24,7 @@ class DatabaseService {
     this.connectionError = null;
     this.supabaseClient = null;
     this.currentUser = null;
-    this.activeBoardId = null;
+    this.activeBoardId = PUBLIC_BOARD_ID;
     this.broadcastChannel = null;
     
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -44,6 +51,7 @@ class DatabaseService {
         // Get Current Session User
         this.supabaseClient.auth.getUser().then(({ data }) => {
           this.currentUser = data ? data.user : null;
+          this.fetchFromSupabase(this.activeBoardId);
         });
 
         // Real-time Supabase Subscription
@@ -105,8 +113,8 @@ class DatabaseService {
     const { error } = await this.supabaseClient.auth.signOut();
     if (error) throw error;
     this.currentUser = null;
-    this.activeBoardId = null;
-    this._saveLocal([]);
+    this.activeBoardId = PUBLIC_BOARD_ID;
+    this.fetchFromSupabase(PUBLIC_BOARD_ID);
     this._notifyListeners();
   }
 
@@ -121,22 +129,30 @@ class DatabaseService {
 
   /* --- Boards API --- */
   async getBoards() {
-    if (!this.supabaseClient || !this.currentUser) return [];
+    const list = [PUBLIC_BOARD];
+
+    if (!this.supabaseClient || !this.currentUser) {
+      return list;
+    }
+
     try {
       const { data, error } = await this.supabaseClient
         .from('boards')
         .select('*')
+        .eq('user_id', this.currentUser.id)
+        .or('is_archived.is.null,is_archived.eq.false')
         .order('created_at', { ascending: true });
 
       if (error) {
-        console.warn('Errore lettura bacheche:', error.message);
-        return [];
+        console.warn('Errore lettura bacheche personali:', error.message);
+        return list;
       }
 
-      return data || [];
+      const userBoards = (data || []).filter(b => b.id !== PUBLIC_BOARD_ID);
+      return [PUBLIC_BOARD, ...userBoards];
     } catch (e) {
       console.error('Errore getBoards:', e);
-      return [];
+      return list;
     }
   }
 
@@ -150,6 +166,7 @@ class DatabaseService {
       user_id: this.currentUser.id,
       title,
       description,
+      is_archived: false,
       created_at: Date.now()
     };
 
@@ -159,15 +176,28 @@ class DatabaseService {
     return newBoard;
   }
 
+  // Soft Delete Board (Soft delete: marks as is_archived = true, preserving data on Supabase)
   async deleteBoard(boardId) {
+    if (boardId === PUBLIC_BOARD_ID) {
+      throw new Error('Impossibile eliminare la bacheca pubblica della community');
+    }
     if (!this.supabaseClient || !this.currentUser) return;
-    const { error } = await this.supabaseClient.from('boards').delete().eq('id', boardId);
-    if (error) console.error('Errore eliminazione bacheca:', error.message);
+
+    const { error } = await this.supabaseClient
+      .from('boards')
+      .update({ is_archived: true })
+      .eq('id', boardId)
+      .eq('user_id', this.currentUser.id);
+
+    if (error) {
+      console.error('Errore archiviazione bacheca:', error.message);
+      throw new Error(error.message);
+    }
   }
 
   /* --- Posts API Scoped by Board --- */
-  async fetchFromSupabase(boardId) {
-    if (!this.supabaseClient || !boardId) return;
+  async fetchFromSupabase(boardId = PUBLIC_BOARD_ID) {
+    if (!this.supabaseClient) return;
     this.activeBoardId = boardId;
 
     try {
@@ -230,19 +260,14 @@ class DatabaseService {
 
   // Add a new post
   async addPost(postData) {
-    if (!this.currentUser) {
-      throw new Error('Devi effettuare l\'accesso per pubblicare');
-    }
-    if (!this.activeBoardId) {
-      throw new Error('Seleziona prima una bacheca');
-    }
-
-    const defaultAuthor = (this.currentUser.user_metadata && this.currentUser.user_metadata.username) || this.currentUser.email.split('@')[0];
+    const defaultAuthor = this.currentUser ? 
+      ((this.currentUser.user_metadata && this.currentUser.user_metadata.username) || this.currentUser.email.split('@')[0])
+      : 'Anonimo';
 
     const newPost = {
       id: 'post-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      board_id: this.activeBoardId,
-      user_id: this.currentUser.id,
+      board_id: this.activeBoardId || PUBLIC_BOARD_ID,
+      user_id: this.currentUser ? this.currentUser.id : null,
       title: postData.title || '',
       content: postData.content || '',
       author: postData.author || defaultAuthor,
