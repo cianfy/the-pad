@@ -24,7 +24,7 @@ class DatabaseService {
     this.connectionError = null;
     this.supabaseClient = null;
     this.currentUser = null;
-    this.activeBoardId = PUBLIC_BOARD_ID;
+    this.activeBoardId = localStorage.getItem('the_pad_last_active_board') || PUBLIC_BOARD_ID;
     this.broadcastChannel = null;
     
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -54,7 +54,7 @@ class DatabaseService {
           this.fetchFromSupabase(this.activeBoardId);
         });
 
-        // Real-time Supabase Subscription
+        // Real-time Supabase Subscription for instant cross-client updates
         this.supabaseClient
           .channel('public:posts')
           .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, () => {
@@ -114,6 +114,7 @@ class DatabaseService {
     if (error) throw error;
     this.currentUser = null;
     this.activeBoardId = PUBLIC_BOARD_ID;
+    localStorage.setItem('the_pad_last_active_board', PUBLIC_BOARD_ID);
     this.fetchFromSupabase(PUBLIC_BOARD_ID);
     this._notifyListeners();
   }
@@ -176,7 +177,7 @@ class DatabaseService {
     return newBoard;
   }
 
-  // Soft Delete Board (Soft delete: marks as is_archived = true, preserving data on Supabase)
+  // Soft Delete Board
   async deleteBoard(boardId) {
     if (boardId === PUBLIC_BOARD_ID) {
       throw new Error('Impossibile eliminare la bacheca pubblica della community');
@@ -199,6 +200,7 @@ class DatabaseService {
   async fetchFromSupabase(boardId = PUBLIC_BOARD_ID) {
     if (!this.supabaseClient) return;
     this.activeBoardId = boardId;
+    localStorage.setItem('the_pad_last_active_board', boardId);
 
     try {
       const { data, error } = await this.supabaseClient
@@ -293,6 +295,10 @@ class DatabaseService {
   async deletePost(id) {
     if (!this.supabaseClient || !this.activeBoardId) return;
 
+    const posts = this.getPosts().filter(p => p.id !== id);
+    this._saveLocal(posts);
+    this._notifyListeners();
+
     const { error } = await this.supabaseClient.from('posts').delete().eq('id', id);
     if (error) console.error('Errore eliminazione Supabase:', error.message);
 
@@ -300,10 +306,8 @@ class DatabaseService {
     this._broadcastUpdate();
   }
 
-  // Add/Toggle reaction
+  // Add/Toggle reaction (Instant UI update + Async Supabase sync)
   async addReaction(postId, reactionEmoji) {
-    if (!this.supabaseClient || !this.activeBoardId) return;
-
     const posts = this.getPosts();
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -311,18 +315,24 @@ class DatabaseService {
     if (!post.reactions) post.reactions = {};
     post.reactions[reactionEmoji] = (post.reactions[reactionEmoji] || 0) + 1;
 
-    await this.supabaseClient
-      .from('posts')
-      .update({ reactions: post.reactions })
-      .eq('id', postId);
+    // Instant optimistic UI update
+    this._saveLocal(posts);
+    this._notifyListeners();
 
-    this._broadcastUpdate();
+    if (this.supabaseClient) {
+      try {
+        await this.supabaseClient
+          .from('posts')
+          .update({ reactions: post.reactions })
+          .eq('id', postId);
+      } catch (err) {
+        console.error('Errore reazione Supabase:', err);
+      }
+    }
   }
 
-  // Add a comment to a post
+  // Add a comment (Instant UI update + Async Supabase sync)
   async addComment(postId, commentObj) {
-    if (!this.supabaseClient || !this.activeBoardId) return;
-
     const posts = this.getPosts();
     const post = posts.find(p => p.id === postId);
     if (!post) return;
@@ -330,12 +340,20 @@ class DatabaseService {
     if (!post.comments) post.comments = [];
     post.comments.push(commentObj);
 
-    await this.supabaseClient
-      .from('posts')
-      .update({ comments: post.comments })
-      .eq('id', postId);
+    // Instant optimistic UI update
+    this._saveLocal(posts);
+    this._notifyListeners();
 
-    this._broadcastUpdate();
+    if (this.supabaseClient) {
+      try {
+        await this.supabaseClient
+          .from('posts')
+          .update({ comments: post.comments })
+          .eq('id', postId);
+      } catch (err) {
+        console.error('Errore commento Supabase:', err);
+      }
+    }
   }
 
   // Update canvas coordinates (x, y)
@@ -348,6 +366,8 @@ class DatabaseService {
 
     post.x = x;
     post.y = y;
+
+    this._saveLocal(posts);
 
     await this.supabaseClient
       .from('posts')
