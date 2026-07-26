@@ -926,6 +926,50 @@ body {
   object-fit: contain;
 }
 
+/* Auth Bar & Board Selector Styles */
+.auth-nav-logged-out, .auth-nav-logged-in {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.user-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  padding: 0.35rem 0.85rem;
+  border-radius: var(--radius-full);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.board-selector-container {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.board-select-dropdown {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--surface-glass-border);
+  color: var(--text-primary);
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-full);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  max-width: 180px;
+}
+
+.board-select-dropdown option {
+  background: var(--bg-gradient-1);
+  color: var(--text-primary);
+}
+
 /* Keyframe Animations */
 @keyframes popIn {
   0% { opacity: 0; transform: scale(0.85); }
@@ -951,6 +995,10 @@ body {
   }
   .header-actions {
     justify-content: space-between;
+    flex-wrap: wrap;
+  }
+  .hide-mobile {
+    display: none;
   }
   .board-container.grid-view {
     grid-template-columns: 1fr;

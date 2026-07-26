@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>The Pad — Bacheca Interattiva Online</title>
-  <meta name="description" content="Una bacheca stile Padlet moderna ed interattiva per condividere testo ed immagini online in tempo reale su GitHub Pages con Supabase.">
+  <meta name="description" content="Una bacheca stile Padlet con autenticazione utenti, bacheche personali e sincronizzazione in tempo reale su GitHub Pages con Supabase.">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📌</text></svg>">
   <link rel="stylesheet" href="styles.css">
   
@@ -30,7 +30,7 @@
           <div class="logo-badge">📌</div>
           <div>
             <div class="logo-title">The Pad</div>
-            <div class="logo-subtitle">Interactive Board</div>
+            <div class="logo-subtitle">Personal Boards</div>
           </div>
         </div>
 
@@ -40,8 +40,19 @@
           <input type="text" id="searchInput" class="search-input" placeholder="Cerca tra i post per testo, autore o tag...">
         </div>
 
-        <!-- Header Actions -->
+        <!-- Header Actions & Auth Bar -->
         <div class="header-actions">
+          
+          <!-- Board Switcher (Visible when logged in) -->
+          <div id="boardSelectorContainer" class="board-selector-container" style="display: none;">
+            <select id="boardSelect" class="form-select board-select-dropdown" title="Seleziona la tua bacheca">
+              <!-- Dynamically populated boards -->
+            </select>
+            <button id="openNewBoardModalBtn" class="btn-icon" title="Crea Nuova Bacheca">
+              <span>➕</span> <span class="hide-mobile">Nuova Bacheca</span>
+            </button>
+          </div>
+
           <!-- View Modes -->
           <div class="btn-group" title="Cambia Modalità Vista">
             <button id="viewGridBtn" class="btn-icon active" title="Griglia Dinamica">
@@ -60,8 +71,23 @@
             <span id="themeIcon">🌙</span>
           </button>
 
+          <!-- User Authentication Section -->
+          <div id="authNavLoggedOut" class="auth-nav-logged-out">
+            <button id="openLoginModalBtn" class="btn-icon">Accedi</button>
+            <button id="openSignupModalBtn" class="btn-primary">Registrati 🚀</button>
+          </div>
+
+          <div id="authNavLoggedIn" class="auth-nav-logged-in" style="display: none;">
+            <div class="user-badge" id="userBadge" title="Utente connesso">
+              <span>👤</span> <span id="userBadgeName">Utente</span>
+            </div>
+            <button id="logoutBtn" class="btn-icon" title="Disconnettiti" style="color: #ef4444;">
+              <span>🚪</span> <span class="hide-mobile">Esci</span>
+            </button>
+          </div>
+
           <!-- Add Post Button -->
-          <button id="openPostModalBtn" class="btn-primary">
+          <button id="openPostModalBtn" class="btn-primary" style="display: none;">
             <span>✨</span> <span>Nuovo Post</span>
           </button>
         </div>
@@ -72,12 +98,12 @@
     <!-- Board Info Banner -->
     <div class="board-header">
       <div class="board-info">
-        <h1 id="boardTitle">Bacheca della Community</h1>
-        <p id="boardDescription">Condividi pensieri, appunti, idee e immagini in tempo reale.</p>
+        <h1 id="boardTitle">Le mie Bacheche</h1>
+        <p id="boardDescription">Accedi per creare e gestire le tue bacheche personali.</p>
       </div>
       <div id="dbStatusBadge" class="db-status-badge">
         <span class="status-dot"></span>
-        <span id="dbStatusText">⚡ Live Cloud Sync (Supabase)</span>
+        <span id="dbStatusText">⚡ Supabase Auth & Cloud</span>
       </div>
     </div>
 
@@ -89,12 +115,94 @@
     </main>
 
     <!-- Floating Action Button for Mobile/Desktop -->
-    <button id="fabBtn" class="fab" title="Crea un nuovo post">
+    <button id="fabBtn" class="fab" title="Crea un nuovo post" style="display: none;">
       ➕
     </button>
   </div>
 
-  <!-- Modal 1: Create / Edit Post -->
+  <!-- Modal 1: User Auth (Login / Signup) -->
+  <div id="authModal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 440px;">
+      <div class="modal-header">
+        <h2 id="authModalTitle" class="modal-title">Accedi a The Pad</h2>
+        <button class="btn-close" id="closeAuthModalBtn">&times;</button>
+      </div>
+
+      <!-- Auth Tabs Switcher -->
+      <div class="btn-group" style="width: 100%; margin-bottom: 1.25rem;">
+        <button id="tabLoginBtn" class="btn-icon active" style="flex: 1; justify-content: center;">Accedi</button>
+        <button id="tabSignupBtn" class="btn-icon" style="flex: 1; justify-content: center;">Registrati</button>
+      </div>
+
+      <!-- Email Confirmation Success Notice -->
+      <div id="signupEmailNotice" style="display: none; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1.25rem; font-size: 0.85rem; color: #10b981;">
+        📧 <strong>Controlla la tua email!</strong><br>
+        Abbiamo inviato un messaggio di conferma al tuo indirizzo. Clicca sul link nell'email per attivare il tuo account ed effettuare l'accesso.
+      </div>
+
+      <!-- Login Form -->
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label" for="loginEmail">Email</label>
+          <input type="email" id="loginEmail" class="form-input" placeholder="nome@esempio.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" class="form-input" placeholder="••••••••" required>
+        </div>
+        <div style="margin-top: 1.5rem;">
+          <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">Accedi 🔓</button>
+        </div>
+      </form>
+
+      <!-- Signup Form -->
+      <form id="signupForm" style="display: none;">
+        <div class="form-group">
+          <label class="form-label" for="signupUsername">Nome Utente / Nickname</label>
+          <input type="text" id="signupUsername" class="form-input" placeholder="Es. MarcoDev" maxlength="30" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="signupEmail">Email</label>
+          <input type="email" id="signupEmail" class="form-input" placeholder="nome@esempio.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="signupPassword">Password</label>
+          <input type="password" id="signupPassword" class="form-input" placeholder="Minimo 6 caratteri" minlength="6" required>
+        </div>
+        <div style="margin-top: 1.5rem;">
+          <button type="submit" class="btn-primary" style="width: 100%; justify-content: center;">Crea Account 🚀</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 2: Create New Board -->
+  <div id="boardModal" class="modal-overlay">
+    <div class="modal-container" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2 class="modal-title">Crea Nuova Bacheca</h2>
+        <button class="btn-close" id="closeBoardModalBtn">&times;</button>
+      </div>
+      <form id="boardForm">
+        <div class="form-group">
+          <label class="form-label" for="boardTitleInput">Nome Bacheca *</label>
+          <input type="text" id="boardTitleInput" class="form-input" placeholder="Es. Idee Personali, Progetti, Appunti..." maxlength="50" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="boardDescInput">Descrizione (Opzionale)</label>
+          <input type="text" id="boardDescInput" class="form-input" placeholder="Breve sintesi del contenuto..." maxlength="100">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+          <button type="button" class="btn-icon" id="cancelBoardModalBtn">Annulla</button>
+          <button type="submit" class="btn-primary">Crea Bacheca ✨</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal 3: Create / Edit Post -->
   <div id="postModal" class="modal-overlay">
     <div class="modal-container">
       <div class="modal-header">
@@ -106,7 +214,7 @@
 
         <div class="form-group">
           <label class="form-label" for="postTitleInput">Titolo (opzionale)</label>
-          <input type="text" id="postTitleInput" class="form-input" placeholder="Es. Una bella idea per la community..." maxlength="100">
+          <input type="text" id="postTitleInput" class="form-input" placeholder="Es. Una bella idea..." maxlength="100">
         </div>
 
         <div class="form-group">
@@ -124,7 +232,7 @@
             </p>
           </div>
           <input type="file" id="imageFileInput" accept="image/*" style="display: none;">
-          <div style="text-align: center; margin: 0.5rem 0; font-size: 0.75rem; color: var(--text-muted);">OPPUR URL IMMAGINE</div>
+          <div style="text-align: center; margin: 0.5rem 0; font-size: 0.75rem; color: var(--text-muted);">OPPURE URL IMMAGINE</div>
           <input type="url" id="imageUrlInput" class="form-input" placeholder="https://esempio.com/immagine.jpg">
           <div id="imagePreviewContainer" class="preview-container" style="display: none;">
             <img id="imagePreview" src="" alt="Anteprima">
@@ -165,7 +273,7 @@
     </div>
   </div>
 
-  <!-- Modal 2: Lightbox Image Viewer -->
+  <!-- Modal 4: Lightbox Image Viewer -->
   <div id="lightboxModal" class="modal-overlay">
     <div class="modal-container lightbox-content" style="max-width: 90vw; background: transparent; border: none; box-shadow: none;">
       <button class="btn-close" id="closeLightboxBtn" style="position: absolute; top: 1rem; right: 1rem; background: rgba(0,0,0,0.6); color: white;">&times;</button>
@@ -178,6 +286,7 @@
 
   <!-- Application Modules -->
   <script src="js/db.js" type="module"></script>
+  <script src="js/auth.js" type="module"></script>
   <script src="js/drag.js" type="module"></script>
   <script src="js/app.js" type="module"></script>
 

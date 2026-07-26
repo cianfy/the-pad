@@ -4,11 +4,14 @@
    ========================================================================== */
 
 import { db } from './db.js';
+import { authManager } from './auth.js';
 import { makeCardDraggable } from './drag.js';
 
 class App {
   constructor() {
     this.currentPosts = [];
+    this.boards = [];
+    this.activeBoard = null;
     this.connectionState = 'connecting';
     this.connectionError = null;
     this.currentView = localStorage.getItem('the_pad_view_mode') || 'grid';
@@ -28,6 +31,17 @@ class App {
       this.updateDbStatus();
       this.render();
     });
+
+    // Listen for Auth changes to reload boards
+    db.onAuthStateChange(async (user) => {
+      if (user) {
+        await this.loadUserBoards();
+      } else {
+        this.boards = [];
+        this.activeBoard = null;
+        this.renderLoggedOutState();
+      }
+    });
   }
 
   initElements() {
@@ -40,6 +54,12 @@ class App {
     this.openPostModalBtn = document.getElementById('openPostModalBtn');
     this.fabBtn = document.getElementById('fabBtn');
     
+    // Board Selector Elements
+    this.boardSelect = document.getElementById('boardSelect');
+    this.openNewBoardModalBtn = document.getElementById('openNewBoardModalBtn');
+    this.boardTitle = document.getElementById('boardTitle');
+    this.boardDescription = document.getElementById('boardDescription');
+
     // Containers
     this.boardContainer = document.getElementById('boardContainer');
     this.searchInput = document.getElementById('searchInput');
@@ -47,11 +67,17 @@ class App {
     this.dbStatusBadge = document.getElementById('dbStatusBadge');
     this.dbStatusText = document.getElementById('dbStatusText');
 
-    // Modals & Forms
+    // Post Modal & Forms
     this.postModal = document.getElementById('postModal');
     this.closePostModalBtn = document.getElementById('closePostModalBtn');
     this.cancelPostModalBtn = document.getElementById('cancelPostModalBtn');
     this.postForm = document.getElementById('postForm');
+
+    // New Board Modal
+    this.boardModal = document.getElementById('boardModal');
+    this.closeBoardModalBtn = document.getElementById('closeBoardModalBtn');
+    this.cancelBoardModalBtn = document.getElementById('cancelBoardModalBtn');
+    this.boardForm = document.getElementById('boardForm');
 
     // Image Upload Elements
     this.imageDropZone = document.getElementById('imageDropZone');
@@ -79,7 +105,14 @@ class App {
     // Search Bar Live Filter
     this.searchInput.addEventListener('input', () => this.render());
 
-    // Modals Controls
+    // Board Switcher Dropdown & Modal
+    this.boardSelect.addEventListener('change', (e) => this.selectBoard(e.target.value));
+    this.openNewBoardModalBtn.addEventListener('click', () => this.openBoardModal());
+    this.closeBoardModalBtn.addEventListener('click', () => this.closeBoardModal());
+    this.cancelBoardModalBtn.addEventListener('click', () => this.closeBoardModal());
+    this.boardForm.addEventListener('submit', (e) => this.handleBoardSubmit(e));
+
+    // Post Modals Controls
     this.openPostModalBtn.addEventListener('click', () => this.openPostModal());
     this.fabBtn.addEventListener('click', () => this.openPostModal());
     this.closePostModalBtn.addEventListener('click', () => this.closePostModal());
@@ -146,6 +179,92 @@ class App {
 
     // Form Submissions
     this.postForm.addEventListener('submit', (e) => this.handlePostSubmit(e));
+  }
+
+  /* --- Boards Management --- */
+  async loadUserBoards() {
+    this.boards = await db.getBoards();
+    this.updateBoardDropdown();
+
+    if (this.boards.length > 0) {
+      this.selectBoard(this.boards[0].id);
+    } else {
+      // Auto-create a default board if user has none
+      try {
+        const defaultBoard = await db.createBoard('La mia prima Bacheca', 'Note e appunti personali');
+        this.boards = [defaultBoard];
+        this.updateBoardDropdown();
+        this.selectBoard(defaultBoard.id);
+      } catch (err) {
+        console.error('Errore creazione bacheca default:', err);
+      }
+    }
+  }
+
+  updateBoardDropdown() {
+    this.boardSelect.innerHTML = '';
+    this.boards.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id;
+      opt.textContent = '📌 ' + b.title;
+      this.boardSelect.appendChild(opt);
+    });
+  }
+
+  selectBoard(boardId) {
+    const board = this.boards.find(b => b.id === boardId);
+    if (!board) return;
+
+    this.activeBoard = board;
+    this.boardSelect.value = boardId;
+    this.boardTitle.textContent = board.title;
+    this.boardDescription.textContent = board.description || 'Bacheca personale riservata';
+
+    db.fetchFromSupabase(boardId);
+  }
+
+  openBoardModal() {
+    this.boardModal.classList.add('active');
+    document.getElementById('boardTitleInput').focus();
+  }
+
+  closeBoardModal() {
+    this.boardModal.classList.remove('active');
+    this.boardForm.reset();
+  }
+
+  async handleBoardSubmit(e) {
+    e.preventDefault();
+    const title = document.getElementById('boardTitleInput').value.trim();
+    const desc = document.getElementById('boardDescInput').value.trim();
+
+    if (!title) return;
+
+    try {
+      const newBoard = await db.createBoard(title, desc);
+      this.boards.push(newBoard);
+      this.updateBoardDropdown();
+      this.selectBoard(newBoard.id);
+      this.closeBoardModal();
+      this.showToast('🎉 Nuova bacheca creata!');
+    } catch (err) {
+      this.showToast('⚠️ Errore creazione bacheca: ' + err.message);
+    }
+  }
+
+  renderLoggedOutState() {
+    this.boardTitle.textContent = 'Le mie Bacheche';
+    this.boardDescription.textContent = 'Accedi o registrati per creare e gestire le tue bacheche personali.';
+    this.boardContainer.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🔐</div>
+        <h3>Accedi al tuo Account</h3>
+        <p>Effettua l'accesso o registrati per iniziare a creare e condividere note sulle tue bacheche personali.</p>
+        <div style="margin-top: 1.5rem;">
+          <button class="btn-primary" onclick="document.getElementById('openSignupModalBtn').click()" style="margin: 0 auto;">Crea un Account Gratuito 🚀</button>
+        </div>
+      </div>
+    `;
   }
 
   /* --- Theme Toggle --- */
@@ -218,8 +337,8 @@ class App {
 
   /* --- Modals & Forms --- */
   openPostModal() {
-    if (this.connectionState === 'error') {
-      this.showToast('⚠️ Impossibile creare post: Supabase non disponibile');
+    if (!db.currentUser) {
+      authManager.openModal('login');
       return;
     }
     this.postModal.classList.add('active');
@@ -247,7 +366,7 @@ class App {
 
     const title = document.getElementById('postTitleInput').value.trim();
     const content = document.getElementById('postContentInput').value.trim();
-    const author = document.getElementById('postAuthorInput').value.trim() || 'Anonimo';
+    const author = document.getElementById('postAuthorInput').value.trim();
     const tag = document.getElementById('postTagInput').value.trim() || 'Generale';
 
     if (!content) {
@@ -267,7 +386,7 @@ class App {
     try {
       await db.addPost(postData);
       this.closePostModal();
-      this.showToast('🎉 Post pubblicato su Supabase!');
+      this.showToast('🎉 Post pubblicato!');
     } catch (err) {
       this.showToast('⚠️ Errore di pubblicazione: ' + err.message);
     }
@@ -276,13 +395,13 @@ class App {
   updateDbStatus() {
     if (this.connectionState === 'connected') {
       this.dbStatusBadge.className = 'db-status-badge';
-      this.dbStatusText.textContent = '⚡ Live Cloud Sync (Supabase)';
+      this.dbStatusText.textContent = '⚡ Supabase Cloud Realtime';
     } else if (this.connectionState === 'connecting') {
       this.dbStatusBadge.className = 'db-status-badge local';
-      this.dbStatusText.textContent = '🔄 Connessione a Supabase...';
+      this.dbStatusText.textContent = '🔄 Connessione in corso...';
     } else {
       this.dbStatusBadge.className = 'db-status-badge local';
-      this.dbStatusText.textContent = '⚠️ Connessione Assente';
+      this.dbStatusText.textContent = '⚠️ Errore Connessione';
     }
   }
 
@@ -302,6 +421,11 @@ class App {
 
   /* --- Render Posts & Cards --- */
   render() {
+    if (!db.currentUser) {
+      this.renderLoggedOutState();
+      return;
+    }
+
     this.boardContainer.innerHTML = '';
 
     // Handle Connection Error State
@@ -316,13 +440,13 @@ class App {
       return;
     }
 
-    // Handle Connecting State
+    // Handle Loading State
     if (this.connectionState === 'connecting' && this.currentPosts.length === 0) {
       this.boardContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🔄</div>
-          <h3>Connessione al Pad in corso...</h3>
-          <p>Attendi un istante il caricamento dei post dal database cloud.</p>
+          <h3>Caricamento della bacheca...</h3>
+          <p>Attendi un istante il recupero delle tue note dal database cloud.</p>
         </div>
       `;
       return;
@@ -344,7 +468,7 @@ class App {
       this.boardContainer.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">📌</div>
-          <h3>Nessun post presente nella bacheca</h3>
+          <h3>Nessun post in questa bacheca</h3>
           <p>${query ? 'Nessun risultato corrisponde alla tua ricerca.' : 'Sii il primo a pubblicare una nota o un\'immagine!'}</p>
         </div>
       `;

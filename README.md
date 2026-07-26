@@ -1,39 +1,34 @@
-# 📌 The Pad — Bacheca Interattiva Online (con Supabase)
+# 📌 The Pad — Bacheca Interattiva Online con Autenticazione & Bacheche Personali
 
-**The Pad** è una Web Application moderna ed elegante stile **Padlet**, progettata per essere distribuita gratuitamente su **GitHub Pages** (sia come app a sé stante che affiancata al tuo portfolio esistente).
+**The Pad** è una Web Application moderna ed elegante stile **Padlet**, pubblicata su **GitHub Pages** e potenziata da **Supabase Auth** e **Realtime Database**.
 
-Permette a chiunque si colleghi al tuo sito di visualizzare, pubblicare ed interagire in tempo reale con **post di testo, immagini, note colorate, reazioni ed immagini**, salvando tutto su **Supabase**!
-
----
-
-## ✨ Caratteristiche Principali
-
-- ⚡ **Backend Cloud Supabase**: Database PostgreSQL + Realtime integrati con SDK JavaScript nativo per il browser.
-- 📐 **3 Modalità di Visualizzazione**:
-  - **Griglia Dinamica (Masonry)**: Layout pulito ed automatico.
-  - **Bacheca Libera (Drag & Drop)**: Trascina liberamente le note post-it sullo schermo con trascinamento fluido.
-  - **Vista Lista**: Formato compatto a scorrimento verticale.
-- 🎨 **Note Personalizzabili**: Colori pastello/neon (Viola, Rosa, Blu, Smeraldo, Ambra, Verde), autore, tag ed allegati immagine.
-- 📸 **Supporto Immagini**: Caricamento diretto da file (drag & drop) oppure tramite URL.
-- ❤️ **Reazioni & Commenti**: Emoji interattive (❤️, 🔥, 👍, 💡, 🚀) e sezione commenti sotto ogni post.
-- 🔍 **Ricerca Live**: Filtro istantaneo per parole chiave, tag, autore o testo.
-- 🌙 **Design Moderno Glassmorphism**: Temi Scuro e Chiaro con animazioni fluide.
+Ora ciascun utente può:
+- 🔐 Registrarsi con **Email e Password** e confermare l'account cliccando il link inviato via email.
+- 📌 Creare e gestire **Bacheche Personali riservate** (es. "Idee", "Lavoro", "Appunti").
+- 📸 Pubblicare note colorate con testo, immagini, reazioni ed il supporto Drag & Drop.
+- 🛡️ Contare sulla **sicurezza RLS (Row Level Security)** che protegge i dati di ciascun utente.
 
 ---
 
-## ⚡ Guida Rapida: Configurare Supabase in 2 Minuti
+## ⚡ Guida SQL: Configurare le Bacheche Personali su Supabase
 
-1. Vai su **[supabase.com](https://supabase.com)** e crea un account / nuovo progetto gratuito.
-2. Una volta creato il progetto:
-   - Vai nel menu **Project Settings** > **API**.
-   - Copia la **Project URL** (es. `https://xxxxxxxxx.supabase.co`) e la **anon public key** (`eyJhbGciOi...`).
-3. Nel menu a sinistra di Supabase, apri l'**SQL Editor** e clicca su **New Query**.
-4. Incolla ed esegui questo codice SQL per creare la tabella ed attivare le autorizzazioni di lettura/scrittura pubbliche:
+Per attivare le bacheche personali e le autorizzazioni di sicurezza RLS, apri l'**SQL Editor** su Supabase ed esegui questo codice SQL:
 
 ```sql
--- 1. Crea la tabella dei post
+-- 1. Tabella delle Bacheche Personali
+create table boards (
+  id text primary key,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
+  title text not null,
+  description text,
+  created_at bigint
+);
+
+-- 2. Aggiornamento Tabella dei Post
 create table posts (
   id text primary key,
+  board_id text references boards(id) on delete cascade,
+  user_id uuid references auth.users(id) on delete cascade default auth.uid(),
   title text,
   content text,
   author text,
@@ -47,63 +42,49 @@ create table posts (
   created_at bigint
 );
 
--- 2. Attiva la sicurezza RLS e la lettura/scrittura pubblica per la bacheca
+-- 3. Attiva Row Level Security (RLS) per isolare le bacheche dei singoli utenti
+alter table boards enable row level security;
 alter table posts enable row level security;
-create policy "Public Select" on posts for select using (true);
-create policy "Public Insert" on posts for insert with check (true);
-create policy "Public Update" on posts for update using (true);
-create policy "Public Delete" on posts for delete using (true);
 
--- 3. Attiva Supabase Realtime per gli aggiornamenti live
+-- Policy per le Bacheche (Gli utenti vedono e modificano solo le proprie bacheche)
+create policy "User Boards Policy" on boards 
+  for all 
+  using (auth.uid() = user_id) 
+  with check (auth.uid() = user_id);
+
+-- Policy per i Post (Gli utenti gestiscono i post delle proprie bacheche)
+create policy "User Posts Policy" on posts 
+  for all 
+  using (auth.uid() = user_id) 
+  with check (auth.uid() = user_id);
+
+-- 4. Abilita la sincronizzazione Realtime
+alter publication supabase_realtime add table boards;
 alter publication supabase_realtime add table posts;
 ```
 
-5. Clicca **Run**.
-6. Apri la tua web app su GitHub Pages (o in locale), clicca sull'icona della fulmine (⚡) in alto a destra, incolla la **Project URL** e la **Anon Key** e clicca **Salva e Connetti**!
+---
 
-🎉 **Fatto! Da questo momento tutti i post pubblicati da qualsiasi utente sul web saranno salvati su Supabase e sincronizzati in tempo reale per tutti i visitatori.**
+## 📧 Configurazione Email di Conferma su Supabase
+
+Per la verifica via email all'atto della registrazione:
+1. Su Supabase Console, vai in **Authentication** > **Providers** > **Email**.
+2. Assicurati che **"Confirm email"** sia impostato su **ON**.
+3. In **Authentication** > **URL Configuration**, imposta **Site URL** al tuo link di GitHub Pages:  
+   `https://IL_TUO_USERNAME.github.io/the-pad/`
 
 ---
 
-## 🚀 Guida alla Pubblicazione su GitHub Pages
+## 🚀 Guida al Deployment su GitHub Pages
 
-Hai due modalità semplici per pubblicare **The Pad** al fianco del tuo portfolio:
+### Aggiornare il Repository GitHub
+Esegui questi comandi nel terminale per aggiornare l'applicazione su GitHub:
 
-### Opzione 1: Repository Separato (Consigliata per mantenere il portfolio pulito)
-1. Vai su GitHub e crea un **nuovo repository** pubblico chiamato `the-pad`.
-2. Apri il terminale nella cartella del progetto e carica i file:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit of The Pad with Supabase"
-   git branch -M main
-   git remote add origin https://github.com/IL_TUO_USERNAME/the-pad.git
-   git push -u origin main
-   ```
-3. Su GitHub, vai in **Settings** > **Pages** del repository `the-pad`.
-4. Sotto **Build and deployment**, seleziona `Source: Deploy from a branch` e scegli il branch `main` (folder `/root`).
-5. Clicca **Save**. Il tuo sito sarà visibile su:  
-   👉 **`https://IL_TUO_USERNAME.github.io/the-pad/`**
+```bash
+git add .
+git commit -m "Aggiunta Autenticazione Utenti e Bacheche Personali"
+git push
+```
 
----
-
-### Opzione 2: Dentro la cartella del tuo Portfolio esistente
-1. Se il tuo portfolio è nel repository `IL_TUO_USERNAME.github.io`, crea al suo interno una cartella chiamata `pad` (o `the-pad`).
-2. Copia i file di questa applicazione (`index.html`, `styles.css`, cartella `js/`) dentro quella cartella.
-3. Fai il push delle modifiche sul tuo repository:
-   ```bash
-   git add .
-   git commit -m "Aggiunta app The Pad"
-   git push
-   ```
-4. L'applicazione sarà raggiungibile su:  
-   👉 **`https://IL_TUO_USERNAME.github.io/pad/`**
-
----
-
-## 🛠️ Tecnologie Utilizzate
-
-- **Supabase Client SDK v2** (Database PostgreSQL Cloud & Realtime WebSockets)
-- **HTML5 & CSS3 Vanilla** (Variabili CSS, Flexbox, CSS Grid, Glassmorphism, Micro-interazioni)
-- **JavaScript ES Modules** (Architettura pulita e modulare senza build tool)
-- **BroadcastChannel API** (Sincronizzazione istantanea tra schede dello stesso browser)
+L'applicazione si aggiornerà automaticamente su:  
+👉 **`https://IL_TUO_USERNAME.github.io/the-pad/`**
