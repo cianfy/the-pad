@@ -49,8 +49,8 @@ class DatabaseService {
         console.log('⚡ Connesso nativamente a Supabase Database & Auth');
         
         // Get Current Session User
-        this.supabaseClient.auth.getUser().then(({ data }) => {
-          this.currentUser = data ? data.user : null;
+        this.supabaseClient.auth.getSession().then(({ data }) => {
+          this.currentUser = data && data.session ? data.session.user : null;
           this.fetchFromSupabase(this.activeBoardId);
         });
 
@@ -132,7 +132,19 @@ class DatabaseService {
   async getBoards() {
     const list = [PUBLIC_BOARD];
 
-    if (!this.supabaseClient || !this.currentUser) {
+    if (!this.supabaseClient) return list;
+
+    // Ensure user session is loaded
+    if (!this.currentUser) {
+      try {
+        const { data } = await this.supabaseClient.auth.getSession();
+        if (data && data.session) {
+          this.currentUser = data.session.user;
+        }
+      } catch (e) {}
+    }
+
+    if (!this.currentUser) {
       return list;
     }
 

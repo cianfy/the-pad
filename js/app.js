@@ -38,15 +38,13 @@ class App {
         await this.loadUserBoards();
       } else {
         this.boards = [PUBLIC_BOARD];
-        const savedBoardId = localStorage.getItem('the_pad_last_active_board') || PUBLIC_BOARD_ID;
-        this.selectBoard(savedBoardId === PUBLIC_BOARD_ID ? PUBLIC_BOARD_ID : PUBLIC_BOARD_ID);
         this.updateBoardDropdown();
+        this.selectBoard(PUBLIC_BOARD_ID);
       }
     });
 
-    // Initial restore of last active board
-    const initialSavedBoard = localStorage.getItem('the_pad_last_active_board') || PUBLIC_BOARD_ID;
-    this.selectBoard(initialSavedBoard);
+    // Initial load of boards & active board restoration
+    this.loadUserBoards();
   }
 
   initElements() {
@@ -192,7 +190,10 @@ class App {
   async loadUserBoards() {
     this.boards = await db.getBoards();
     this.updateBoardDropdown();
-    this.openNewBoardModalBtn.style.display = 'flex';
+
+    if (db.currentUser) {
+      this.openNewBoardModalBtn.style.display = 'flex';
+    }
 
     // Restore last visited board or fallback to public
     const savedBoardId = localStorage.getItem('the_pad_last_active_board') || PUBLIC_BOARD_ID;
@@ -221,7 +222,7 @@ class App {
     this.boardTitle.textContent = board.title;
     this.boardDescription.textContent = board.description || 'Bacheca condivisa';
 
-    // Persist last active board choice
+    // Persist active board choice
     localStorage.setItem('the_pad_last_active_board', boardId);
 
     // Show delete button only if it's a personal board belonging to user
